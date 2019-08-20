@@ -1,4 +1,6 @@
 management/node_modules/
 management/dist/
+management/uploads/
+management/minified/
 webrtc/node_modules/
 webrtc/dist/
