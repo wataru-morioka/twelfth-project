@@ -6,10 +6,11 @@ const cors = require('cors');
 import { Client } from 'pg';
 const bodyParser = require('body-parser');
 const imagemin = require('imagemin');
-const imageminJpegtran = require('imagemin-jpegtran');
+// const imageminJpegtran = require('imagemin-jpegtran');
 const imageminPngquant = require('imagemin-pngquant');
 const imageminSvgo = require('imagemin-svgo');
 const imageminGifsicle = require('imagemin-gifsicle');
+const imageminMozjpeg = require('imagemin-mozjpeg');
 const storage2 = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, './uploads/tmp');
@@ -82,7 +83,8 @@ app.post('/minify', upload2.single('file'), async (req, res, next) => {
     const files = await imagemin([`./uploads/tmp/${fileName}`], {
         destination: './minified/tmp',
         plugins: [
-            imageminJpegtran(),
+            // imageminJpegtran(),
+            imageminMozjpeg({ quality: 80 }),
             imageminPngquant({
                 quality: [0.6, 0.8],
             }),
