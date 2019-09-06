@@ -25,19 +25,29 @@ const upload = multer({ storage });
 const upload2 = multer({ storage: storage2 });
 const gm = require('gm');
 const fs = require('fs');
+const moment = require('moment');
 const swaggerDocument = yamljs.load('swagger.yaml');
+const admin = require('firebase-admin');
+import { Contacts } from './entities/contacts';
+import { getConnectionOptions, createConnection, BaseEntity,
+     Like, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 const app = express();
 
 app.use(bodyParser.json());
 app.use(cors());
 app.use('/api-docs', swaggerUiExpress.serve, swaggerUiExpress.setup(swaggerDocument));
 
-app.get('/hello', (req, res) => {
-    res.json({
-        message: `Hello ${req.query.name}!`,
-        yourName: req.query.name,
-    });
+admin.initializeApp({
+    credential: admin.credential.cert(require('../firebase-service.json')),
 });
+
+const dbConnect = async () => {
+    const connectionOptions = await getConnectionOptions();
+    const connection = await createConnection(connectionOptions);
+    BaseEntity.useConnection(connection);
+};
+
+dbConnect();
 
 export class Postgres{
     private client: Client;
@@ -162,6 +172,146 @@ app.post('/download', async (req, res, next) => {
         console.log(err);
         res.status(500).end('server err');
     });
+});
+
+app.get('/contact', async (req, res, next) => {
+    const authorization = req.headers.authorization;
+    if (authorization === undefined) {
+        res.status(404).end();
+        return;
+    }
+
+    const idToken = authorization.split(' ')[1];
+
+    let userInfo: any = {};
+    await admin.auth().verifyIdToken(idToken)
+    .then((decodedToken: any) => {
+        console.log(decodedToken);
+        userInfo = decodedToken;
+    }).catch((err: any) => {
+        console.log(err);
+        res.status(404).end();
+        return;
+    });
+
+    const name = userInfo.name;
+    const uid = userInfo.uid;
+    const email = userInfo.email;
+
+    const query = req.query;
+    const searchString = query.search;
+    const createdTo = query.createdTo;
+    let contacts: any = [];
+    let count: number = 0;
+
+    if (searchString.length === 0 && createdTo.length === 0) {
+        count = await Contacts.count();
+
+        if (query.type === 'true') {
+            contacts = await Contacts.find({
+                order: {
+                    created_datetime: 'DESC',
+                },
+                take: 100,
+            });
+        } else {
+            console.log('test');
+            contacts = await Contacts.find({
+                order: {
+                    created_datetime: 'ASC',
+                },
+                take: 100,
+            });
+        }
+    } else if (searchString.length !== 0 && createdTo.length === 0) {
+        count = await Contacts.createQueryBuilder('contacts')
+        .where("account like '%' || :search || '%'", { search: searchString })
+        .orWhere("name like '%' || :search || '%'", { search: searchString })
+        .orWhere("email like '%' || :search || '%'", { search: searchString })
+        .orWhere("message like '%' || :search ||'%'", { search: searchString })
+        .getCount();
+
+        if (query.type === 'true') {
+            contacts = await Contacts.createQueryBuilder('contacts')
+            .where("account like '%' || :search || '%'", { search: searchString })
+            .orWhere("name like '%' || :search || '%'", { search: searchString })
+            .orWhere("email like '%' || :search || '%'", { search: searchString })
+            .orWhere("message like '%' || :search ||'%'", { search: searchString })
+            .orderBy('created_datetime', 'DESC')
+            .limit(100)
+            .getMany();
+        } else {
+            contacts = await Contacts.createQueryBuilder('contacts')
+            .where("account like '%' || :search || '%'", { search: searchString })
+            .orWhere("name like '%' || :search || '%'", { search: searchString })
+            .orWhere("email like '%' || :search || '%'", { search: searchString })
+            .orWhere("message like '%' || :search ||'%'", { search: searchString })
+            .orderBy('created_datetime', 'ASC')
+            .limit(100)
+            .getMany();
+        }
+    } else if (searchString.length === 0 && createdTo.length !== 0) {
+        count = await Contacts.createQueryBuilder('contacts')
+        .where('created_datetime <= :to', { to: createdTo })
+        .getCount();
+
+        if (query.type === 'true') {
+            contacts = await Contacts.createQueryBuilder('contacts')
+            .where('created_datetime <= :to', { to: createdTo })
+            .orderBy('created_datetime', 'DESC')
+            .limit(100)
+            .getMany();
+        } else {
+            contacts = await Contacts.createQueryBuilder('contacts')
+            .where('created_datetime <= :to', { to: createdTo })
+            .orderBy('created_datetime', 'ASC')
+            .limit(100)
+            .getMany();
+        }
+    } else if (searchString.length !== 0 && createdTo.length !== 0) {
+        count = await Contacts.createQueryBuilder('contacts')
+        .where("account like '%' || :search || '%'", { search: searchString })
+        .orWhere("name like '%' || :search || '%'", { search: searchString })
+        .orWhere("email like '%' || :search || '%'", { search: searchString })
+        .orWhere("message like '%' || :search ||'%'", { search: searchString })
+        .andWhere('created_datetime <= :to', { to: createdTo })
+        .getCount();
+
+        if (query.type === 'true') {
+            contacts = await Contacts.createQueryBuilder('contacts')
+            .where("account like '%' || :search || '%'", { search: searchString })
+            .orWhere("name like '%' || :search || '%'", { search: searchString })
+            .orWhere("email like '%' || :search || '%'", { search: searchString })
+            .orWhere("message like '%' || :search ||'%'", { search: searchString })
+            .andWhere('created_datetime <= :to', { to: createdTo })
+            .orderBy('created_datetime', 'DESC')
+            .limit(100)
+            .getMany();
+        } else {
+            contacts = await Contacts.createQueryBuilder('contacts')
+            .where("account like '%' || :search || '%'", { search: searchString })
+            .orWhere("name like '%' || :search || '%'", { search: searchString })
+            .orWhere("email like '%' || :search || '%'", { search: searchString })
+            .orWhere("message like '%' || :search ||'%'", { search: searchString })
+            .andWhere('created_datetime <= :to', { to: createdTo })
+            .orderBy('created_datetime', 'ASC')
+            .limit(100)
+            .getMany();
+        }
+    }
+
+    contacts.forEach((contact: any) => {
+        contact.created_datetime = moment(new Date(contact.created_datetime))
+                                    .format('YYYY-MM-DD HH:mm:ss');
+    });
+
+    const response = {
+        result: true,
+        contactList: contacts,
+        totalCount: count,
+    };
+
+    res.send(response);
 });
 
 app.listen(7000, () => console.log('Listen on port 7000!!'));
