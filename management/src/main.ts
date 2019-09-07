@@ -29,6 +29,8 @@ const moment = require('moment');
 const swaggerDocument = yamljs.load('swagger.yaml');
 const admin = require('firebase-admin');
 import { Contacts } from './entities/contacts';
+import { Photographs } from './entities/photographs';
+import { Videos } from './entities/videos';
 import { getConnectionOptions, createConnection, BaseEntity,
      Like, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 const app = express();
@@ -111,6 +113,27 @@ app.post('/minify', upload2.single('file'), async (req, res, next) => {
 });
 
 app.post('/image', upload.single('file'), async (req, res, next) => {
+    const authorization = req.headers.authorization;
+    if (authorization === undefined) {
+        res.status(404).end();
+        return;
+    }
+
+    const idToken = authorization.split(' ')[1];
+
+    let userInfo: any = {};
+    await admin.auth().verifyIdToken(idToken)
+    .then((decodedToken: any) => {
+        console.log(decodedToken);
+        userInfo = decodedToken;
+    }).catch((err: any) => {
+        console.log(err);
+        res.status(404).end();
+        return;
+    });
+
+    // TODO admin権限確認
+
     if (!req.file) {
         res.status(500).end('no file');
         next();
@@ -127,30 +150,182 @@ app.post('/image', upload.single('file'), async (req, res, next) => {
 
     // TODO サイズチェック
 
-    const now = new Date();
+    const now = moment(new Date()).format('YYYY-MM-DD HH:mm:ss');
+    const photo = new Photographs();
+    photo.mimetype = mimetype;
+    photo.file_name = fileName;
+    photo.size = size;
+    photo.data = buffer;
+    photo.created_datetime = now;
+    photo.modified_datetime = now;
 
-    // const sql = 'INSERT INTO \
-    //         photos(id, file_name, mimetype, size, data, created_datetime, modified_datetime) \
-    //         VALUES($1, $2, $3, $4, $5, $6, $7)';
-    // const parameters = ['test2', fileName, mimetype, size, buffer, now, now];
-    // // const sql = 'select * from users';
-    // const pg = new Postgres();
-
-    // await pg.query(sql, parameters).then((result) => {
-    //     console.log(result);
-    // }).catch((err) => {
-    //     console.log(err);
-    // });
-
-    // // await pg.query(sql).then((rows) => {
-    // //     console.log(rows[0]);
-    // // }).catch((err) => {
-    // //     console.log(err);
-    // // });
-
-    // pg.end();
+    await photo.save().then((result) => {
+        console.log('success');
+    }).catch((err) => {
+        console.log(err);
+    });
 
     res.status(200).end('ok');
+});
+
+app.post('/video', upload.single('file'), async (req, res, next) => {
+    const authorization = req.headers.authorization;
+    if (authorization === undefined) {
+        res.status(404).end();
+        return;
+    }
+
+    const idToken = authorization.split(' ')[1];
+
+    let userInfo: any = {};
+    await admin.auth().verifyIdToken(idToken)
+    .then((decodedToken: any) => {
+        console.log(decodedToken);
+        userInfo = decodedToken;
+    }).catch((err: any) => {
+        console.log(err);
+        res.status(404).end();
+        return;
+    });
+
+    // TODO admin権限確認
+
+    if (!req.file) {
+        res.status(500).end('no file');
+        next();
+    }
+    const fileName = req.file.originalname;
+    const buffer = req.file.buffer;
+    const mimetype = req.file.mimetype;
+    const size = req.file.size;
+    console.log(fileName);
+    console.log(buffer);
+    console.log(mimetype);
+    console.log(size);
+    console.log(process.env.POSTGRES_DB);
+
+    // TODO サイズチェック
+
+    const now = moment(new Date()).format('YYYY-MM-DD HH:mm:ss');
+    const video = new Videos();
+    video.photograph_id = 1;
+    video.mimetype = mimetype;
+    video.file_name = fileName;
+    video.size = size;
+    video.data = buffer;
+    video.created_datetime = now;
+    video.modified_datetime = now;
+
+    await video.save().then((result) => {
+        console.log('success');
+    }).catch((err) => {
+        console.log(err);
+    });
+
+    res.status(200).end('ok');
+});
+
+app.get('/video', async (req, res, next) => {
+    const authorization = req.headers.authorization;
+    if (authorization === undefined) {
+        res.status(404).end();
+        return;
+    }
+
+    const idToken = authorization.split(' ')[1];
+
+    let userInfo: any = {};
+    await admin.auth().verifyIdToken(idToken)
+    .then((decodedToken: any) => {
+        console.log(decodedToken);
+        userInfo = decodedToken;
+    }).catch((err: any) => {
+        console.log(err);
+        res.status(404).end();
+        return;
+    });
+
+    // TODO admin権限確認
+
+    const video = await Videos.findOne({
+        where: {
+            photograph_id: 1,
+        },
+    });
+
+    console.log(video);
+
+    video!.created_datetime = moment(new Date(video!.created_datetime))
+                                .format('YYYY-MM-DD HH:mm:ss');
+
+    const response = {
+        result: true,
+        videoInfo: video,
+    };
+
+    res.send(response);
+});
+
+app.post('/download', async (req, res, next) => {
+    if (!req.body) {
+        res.status(500).end('no id');
+        next();
+    }
+    // console.log(req.params.id);
+    console.log(req.body);
+    console.log(req.body.id);
+
+    const pg = new Postgres();
+    const sql = 'select file_name, mimetype, data from photos where id = $1';
+    const parameters = [req.body.id];
+    await pg.query(sql, parameters).then((rows) => {
+        console.log(rows[0]);
+        res.send(rows[0]);
+    }).catch((err) => {
+        console.log(err);
+        res.status(500).end('server err');
+    });
+});
+
+app.get('/photographs', async (req, res, next) => {
+    const authorization = req.headers.authorization;
+    if (authorization === undefined) {
+        res.status(404).end();
+        return;
+    }
+
+    const idToken = authorization.split(' ')[1];
+
+    let userInfo: any = {};
+    await admin.auth().verifyIdToken(idToken)
+    .then((decodedToken: any) => {
+        console.log(decodedToken);
+        userInfo = decodedToken;
+    }).catch((err: any) => {
+        console.log(err);
+        res.status(404).end();
+        return;
+    });
+
+    // TODO admin権限確認
+
+    const photos = await Photographs.find({
+        order: {
+            created_datetime: 'DESC',
+        },
+    });
+
+    photos.forEach((photo: any) => {
+        photo.created_datetime = moment(new Date(photo.created_datetime))
+                                    .format('YYYY-MM-DD HH:mm:ss');
+    });
+
+    const response = {
+        result: true,
+        photoArray: photos,
+    };
+
+    res.send(response);
 });
 
 app.post('/download', async (req, res, next) => {
