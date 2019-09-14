@@ -5,3 +5,4 @@ management/minified/
 webrtc/node_modules/
 webrtc/dist/
 firebase-service.json
+ormconfig.json

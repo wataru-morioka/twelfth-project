@@ -8,18 +8,18 @@ module.exports = {
     externals: [nodeExternals()], 
     module: {
         rules: [
-            {
-                enforce: 'pre',
-                loader: 'tslint-loader',
-                test: /\.ts$/,
-                exclude: [
-                    /node_modules/
-                ],
-                options: {
-                    emitErrors: true,
-                    typeCheck: true
-                }
-            },
+            // {
+            //     enforce: 'pre',
+            //     loader: 'tslint-loader',
+            //     test: /\.ts$/,
+            //     exclude: [
+            //         /node_modules/
+            //     ],
+            //     options: {
+            //         emitErrors: true,
+            //         typeCheck: true
+            //     }
+            // },
             {
                 loader: 'ts-loader',
                 test: /\.ts$/,

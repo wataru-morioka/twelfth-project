@@ -31,7 +31,7 @@ const admin = require('firebase-admin');
 import { Contacts } from './entities/contacts';
 import { Photographs } from './entities/photographs';
 import { Videos } from './entities/videos';
-import { getConnectionOptions, createConnection, BaseEntity,
+import { getConnectionOptions, createConnection, BaseEntity, Brackets,
      Like, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 const app = express();
 
@@ -79,34 +79,9 @@ export class Postgres{
 }
 
 // app.post('/minify', upload2.single('file'), async (req, res, next) => {
-//     if (!req.file) {
-//         res.status(500).end('no file');
-//         next();
-//     }
 //     const fileName = req.file.originalname;
-//     const path = req.file.path;
-//     const mimetype = req.file.mimetype;
-//     const size = req.file.size;
-//     console.log(fileName);
-//     console.log(path);
-//     console.log(mimetype);
-//     console.log(size);
 
 //     const files = await imagemin([`./uploads/tmp/${fileName}`], {
-//         destination: './minified/tmp',
-//         plugins: [
-//             // imageminJpegtran(),
-//             imageminMozjpeg({ quality: 80 }),
-//             imageminPngquant({
-//                 quality: [0.6, 0.8],
-//             }),
-//             imageminGifsicle({
-//                 interlaced: false,
-//                 optimizationLevel: 3,
-//                 // colors:180
-//             }),
-//             imageminSvgo(),
-//         ],
 //     });
 
 //     res.download(`./minified/tmp/${fileName}`);
@@ -703,7 +678,6 @@ app.get('/contact', async (req, res, next) => {
                 take: 100,
             });
         } else {
-            console.log('test');
             contacts = await Contacts.find({
                 order: {
                     created_datetime: 'ASC',
@@ -712,7 +686,7 @@ app.get('/contact', async (req, res, next) => {
             });
         }
     } else if (searchString.length !== 0 && createdTo.length === 0) {
-        count = await Contacts.createQueryBuilder('contacts')
+        count = await Contacts.createQueryBuilder()
         .where("account like '%' || :search || '%'", { search: searchString })
         .orWhere("name like '%' || :search || '%'", { search: searchString })
         .orWhere("email like '%' || :search || '%'", { search: searchString })
@@ -720,7 +694,7 @@ app.get('/contact', async (req, res, next) => {
         .getCount();
 
         if (query.type === 'true') {
-            contacts = await Contacts.createQueryBuilder('contacts')
+            contacts = await Contacts.createQueryBuilder()
             .where("account like '%' || :search || '%'", { search: searchString })
             .orWhere("name like '%' || :search || '%'", { search: searchString })
             .orWhere("email like '%' || :search || '%'", { search: searchString })
@@ -729,7 +703,7 @@ app.get('/contact', async (req, res, next) => {
             .limit(100)
             .getMany();
         } else {
-            contacts = await Contacts.createQueryBuilder('contacts')
+            contacts = await Contacts.createQueryBuilder()
             .where("account like '%' || :search || '%'", { search: searchString })
             .orWhere("name like '%' || :search || '%'", { search: searchString })
             .orWhere("email like '%' || :search || '%'", { search: searchString })
@@ -739,49 +713,61 @@ app.get('/contact', async (req, res, next) => {
             .getMany();
         }
     } else if (searchString.length === 0 && createdTo.length !== 0) {
-        count = await Contacts.createQueryBuilder('contacts')
+        count = await Contacts.createQueryBuilder()
         .where('created_datetime <= :to', { to: createdTo })
         .getCount();
 
         if (query.type === 'true') {
-            contacts = await Contacts.createQueryBuilder('contacts')
+            contacts = await Contacts.createQueryBuilder()
             .where('created_datetime <= :to', { to: createdTo })
             .orderBy('created_datetime', 'DESC')
             .limit(100)
             .getMany();
         } else {
-            contacts = await Contacts.createQueryBuilder('contacts')
+            contacts = await Contacts.createQueryBuilder()
             .where('created_datetime <= :to', { to: createdTo })
             .orderBy('created_datetime', 'ASC')
             .limit(100)
             .getMany();
         }
     } else if (searchString.length !== 0 && createdTo.length !== 0) {
-        count = await Contacts.createQueryBuilder('contacts')
-        .where("account like '%' || :search || '%'", { search: searchString })
-        .orWhere("name like '%' || :search || '%'", { search: searchString })
-        .orWhere("email like '%' || :search || '%'", { search: searchString })
-        .orWhere("message like '%' || :search ||'%'", { search: searchString })
-        .andWhere('created_datetime <= :to', { to: createdTo })
+        count = await Contacts.createQueryBuilder()
+        .where('created_datetime <= :to', { to: createdTo })
+        .andWhere(
+            new Brackets((q) => {
+              q.where("account like '%' || :search || '%'", { search: searchString });
+              q.orWhere("name like '%' || :search || '%'", { search: searchString });
+              q.orWhere("email like '%' || :search || '%'", { search: searchString });
+              q.orWhere("message like '%' || :search ||'%'", { search: searchString });
+            }),
+        )
         .getCount();
 
         if (query.type === 'true') {
-            contacts = await Contacts.createQueryBuilder('contacts')
-            .where("account like '%' || :search || '%'", { search: searchString })
-            .orWhere("name like '%' || :search || '%'", { search: searchString })
-            .orWhere("email like '%' || :search || '%'", { search: searchString })
-            .orWhere("message like '%' || :search ||'%'", { search: searchString })
-            .andWhere('created_datetime <= :to', { to: createdTo })
+            contacts = await Contacts.createQueryBuilder()
+            .where('created_datetime <= :to', { to: createdTo })
+            .andWhere(
+                new Brackets((q) => {
+                  q.where("account like '%' || :search || '%'", { search: searchString });
+                  q.orWhere("name like '%' || :search || '%'", { search: searchString });
+                  q.orWhere("email like '%' || :search || '%'", { search: searchString });
+                  q.orWhere("message like '%' || :search ||'%'", { search: searchString });
+                }),
+            )
             .orderBy('created_datetime', 'DESC')
             .limit(100)
             .getMany();
         } else {
-            contacts = await Contacts.createQueryBuilder('contacts')
-            .where("account like '%' || :search || '%'", { search: searchString })
-            .orWhere("name like '%' || :search || '%'", { search: searchString })
-            .orWhere("email like '%' || :search || '%'", { search: searchString })
-            .orWhere("message like '%' || :search ||'%'", { search: searchString })
-            .andWhere('created_datetime <= :to', { to: createdTo })
+            contacts = await Contacts.createQueryBuilder()
+            .where('created_datetime <= :to', { to: createdTo })
+            .andWhere(
+                new Brackets((q) => {
+                    q.where("account like '%' || :search || '%'", { search: searchString });
+                    q.orWhere("name like '%' || :search || '%'", { search: searchString });
+                    q.orWhere("email like '%' || :search || '%'", { search: searchString });
+                    q.orWhere("message like '%' || :search ||'%'", { search: searchString });
+                }),
+            )
             .orderBy('created_datetime', 'ASC')
             .limit(100)
             .getMany();
