@@ -28,11 +28,13 @@ const fs = require('fs');
 const moment = require('moment');
 const swaggerDocument = yamljs.load('swagger.yaml');
 const admin = require('firebase-admin');
-import { Contacts } from './entities/contacts';
-import { Photographs } from './entities/photographs';
-import { Videos } from './entities/videos';
+import { Contacts } from './entities/postgres/contacts';
+import { Photographs } from './entities/postgres/photographs';
+import { Videos } from './entities/postgres/videos';
 import { getConnectionOptions, createConnection, BaseEntity, Brackets,
      Like, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { resolve } from 'path';
+import { Accounts } from './entities/mysql/accounts';
 const app = express();
 
 app.use(bodyParser.json());
@@ -43,13 +45,24 @@ admin.initializeApp({
     credential: admin.credential.cert(require('../firebase-service.json')),
 });
 
-const dbConnect = async () => {
-    const connectionOptions = await getConnectionOptions();
-    const connection = await createConnection(connectionOptions);
-    BaseEntity.useConnection(connection);
+let postgresConnection: any = null;
+let mysqlConnection: any = null;
+
+const postgresConnect = async () => {
+    const connectionOptions = await getConnectionOptions('postgres');
+    postgresConnection = await createConnection(connectionOptions);
+    BaseEntity.useConnection(postgresConnection);
 };
 
-dbConnect();
+postgresConnect();
+
+const mysqlConnect = async () => {
+    const connectionOptions = await getConnectionOptions('mysql');
+    mysqlConnection = await createConnection(connectionOptions);
+    // BaseEntity.useConnection(mysqlConnection);
+};
+
+mysqlConnect();
 
 export class Postgres{
     private client: Client;
@@ -87,30 +100,46 @@ export class Postgres{
 //     res.download(`./minified/tmp/${fileName}`);
 // });
 
+const isValidAuth = (req: any): Promise<void> => {
+    return new Promise(async (resolve, reject) => {
+        const authorization = req.headers.authorization;
+        if (authorization === undefined) {
+            reject();
+            return;
+        }
+        const idToken = authorization.split(' ')[1];
+        let userInfo: any = {};
+        await admin.auth().verifyIdToken(idToken)
+        .then((decodedToken: any) => {
+            console.log(decodedToken);
+            userInfo = decodedToken;
+        }).catch((err: any) => {
+            console.log(err);
+            reject();
+            return;
+        });
+        // TODO admin権限確認
+        const count = await mysqlConnection.getRepository(Accounts).createQueryBuilder()
+        .where('uid = :uid', { uid: userInfo.uid })
+        .andWhere('admin_flag = :bool', { bool: true })
+        .getCount();
+        if (count >= 1) {
+            resolve();
+            return;
+        }
+        reject();
+    });
+};
+
 app.get('/minify', async (req, res, next) => {
-    const authorization = req.headers.authorization;
-    if (authorization === undefined) {
+    await isValidAuth(req).then(() => {
+    }).catch((err) => {
         res.status(404).end();
-        return;
-    }
-
-    const idToken = authorization.split(' ')[1];
-
-    let userInfo: any = {};
-    await admin.auth().verifyIdToken(idToken)
-    .then((decodedToken: any) => {
-        console.log(decodedToken);
-        userInfo = decodedToken;
-    }).catch((err: any) => {
-        console.log(err);
-        res.status(404).end();
-        return;
+        next();
     });
 
-    // TODO admin権限確認
-
     const photoId = req.query.photoId;
-    const photo = await Photographs.findOne({
+    const photo: Photographs = await postgresConnection.getRepository(Photographs).findOne({
         where: {
             id: photoId,
         },
@@ -160,26 +189,11 @@ app.get('/minify', async (req, res, next) => {
 });
 
 app.post('/photographs', upload.single('file'), async (req, res, next) => {
-    const authorization = req.headers.authorization;
-    if (authorization === undefined) {
+    await isValidAuth(req).then(() => {
+    }).catch((err) => {
         res.status(404).end();
-        return;
-    }
-
-    const idToken = authorization.split(' ')[1];
-
-    let userInfo: any = {};
-    await admin.auth().verifyIdToken(idToken)
-    .then((decodedToken: any) => {
-        console.log(decodedToken);
-        userInfo = decodedToken;
-    }).catch((err: any) => {
-        console.log(err);
-        res.status(404).end();
-        return;
+        next();
     });
-
-    // TODO admin権限確認
 
     if (!req.file) {
         res.status(500).end('no file');
@@ -216,26 +230,11 @@ app.post('/photographs', upload.single('file'), async (req, res, next) => {
 });
 
 app.post('/video', upload.single('file'), async (req, res, next) => {
-    const authorization = req.headers.authorization;
-    if (authorization === undefined) {
+    await isValidAuth(req).then(() => {
+    }).catch((err) => {
         res.status(404).end();
-        return;
-    }
-
-    const idToken = authorization.split(' ')[1];
-
-    let userInfo: any = {};
-    await admin.auth().verifyIdToken(idToken)
-    .then((decodedToken: any) => {
-        console.log(decodedToken);
-        userInfo = decodedToken;
-    }).catch((err: any) => {
-        console.log(err);
-        res.status(404).end();
-        return;
+        next();
     });
-
-    // TODO admin権限確認
 
     if (!req.file) {
         res.status(500).end('no file');
@@ -273,29 +272,14 @@ app.post('/video', upload.single('file'), async (req, res, next) => {
 });
 
 app.get('/video', async (req, res, next) => {
-    const authorization = req.headers.authorization;
-    if (authorization === undefined) {
+    await isValidAuth(req).then(() => {
+    }).catch((err) => {
         res.status(404).end();
-        return;
-    }
-
-    const idToken = authorization.split(' ')[1];
-
-    let userInfo: any = {};
-    await admin.auth().verifyIdToken(idToken)
-    .then((decodedToken: any) => {
-        console.log(decodedToken);
-        userInfo = decodedToken;
-    }).catch((err: any) => {
-        console.log(err);
-        res.status(404).end();
-        return;
+        next();
     });
 
-    // TODO admin権限確認
-
     const photoId = req.query.photoId;
-    const video = await Videos.findOne({
+    const video: Videos = await postgresConnection.getRepository(Videos).findOne({
         where: {
             photograph_id: photoId,
         },
@@ -342,30 +326,15 @@ app.post('/download', async (req, res, next) => {
 });
 
 app.get('/download', async (req, res, next) => {
-    const authorization = req.headers.authorization;
-    if (authorization === undefined) {
+    await isValidAuth(req).then(() => {
+    }).catch((err) => {
         res.status(404).end();
-        return;
-    }
-
-    const idToken = authorization.split(' ')[1];
-
-    let userInfo: any = {};
-    await admin.auth().verifyIdToken(idToken)
-    .then((decodedToken: any) => {
-        console.log(decodedToken);
-        userInfo = decodedToken;
-    }).catch((err: any) => {
-        console.log(err);
-        res.status(404).end();
-        return;
+        next();
     });
-
-    // TODO admin権限確認
 
     const photoId = req.query.photoId;
 
-    const photo = await Photographs.findOne({
+    const photo: Photographs = await postgresConnection.getRepository(Photographs).findOne({
         where: {
             id: photoId,
         },
@@ -380,28 +349,13 @@ app.get('/download', async (req, res, next) => {
 });
 
 app.get('/photographs', async (req, res, next) => {
-    const authorization = req.headers.authorization;
-    if (authorization === undefined) {
+    await isValidAuth(req).then(() => {
+    }).catch((err) => {
         res.status(404).end();
-        return;
-    }
-
-    const idToken = authorization.split(' ')[1];
-
-    let userInfo: any = {};
-    await admin.auth().verifyIdToken(idToken)
-    .then((decodedToken: any) => {
-        console.log(decodedToken);
-        userInfo = decodedToken;
-    }).catch((err: any) => {
-        console.log(err);
-        res.status(404).end();
-        return;
+        next();
     });
 
-    // TODO admin権限確認
-
-    const photos = await Photographs.find({
+    const photos = await postgresConnection.getRepository(Photographs).find({
         order: {
             created_datetime: 'DESC',
         },
@@ -421,32 +375,17 @@ app.get('/photographs', async (req, res, next) => {
 });
 
 app.delete('/photographs', async (req, res, next) => {
-    const authorization = req.headers.authorization;
-    if (authorization === undefined) {
+    await isValidAuth(req).then(() => {
+    }).catch((err) => {
         res.status(404).end();
-        return;
-    }
-
-    const idToken = authorization.split(' ')[1];
-
-    let userInfo: any = {};
-    await admin.auth().verifyIdToken(idToken)
-    .then((decodedToken: any) => {
-        console.log(decodedToken);
-        userInfo = decodedToken;
-    }).catch((err: any) => {
-        console.log(err);
-        res.status(404).end();
-        return;
+        next();
     });
-
-    // TODO admin権限確認
 
     const photoId = req.query.photoId;
     let response = {};
     console.log(photoId);
 
-    const photo = await Photographs.findOne({
+    const photo: Photographs = await postgresConnection.getRepository(Photographs).findOne({
         where: {
             id: photoId,
         },
@@ -468,26 +407,11 @@ app.delete('/photographs', async (req, res, next) => {
 });
 
 app.put('/photographs', upload.single('file'), async (req, res, next) => {
-    const authorization = req.headers.authorization;
-    if (authorization === undefined) {
+    await isValidAuth(req).then(() => {
+    }).catch((err) => {
         res.status(404).end();
-        return;
-    }
-
-    const idToken = authorization.split(' ')[1];
-
-    let userInfo: any = {};
-    await admin.auth().verifyIdToken(idToken)
-    .then((decodedToken: any) => {
-        console.log(decodedToken);
-        userInfo = decodedToken;
-    }).catch((err: any) => {
-        console.log(err);
-        res.status(404).end();
-        return;
+        next();
     });
-
-    // TODO admin権限確認
 
     const photoId = req.body.photoId;
     const thumbnail = req.file;
@@ -495,7 +419,7 @@ app.put('/photographs', upload.single('file'), async (req, res, next) => {
     const title = req.body.title;
     let response = {};
 
-    const photo = await Photographs.findOne({
+    const photo: Photographs = await postgresConnection.getRepository(Photographs).findOne({
         where: {
             id: photoId,
         },
@@ -542,32 +466,17 @@ app.put('/photographs', upload.single('file'), async (req, res, next) => {
 });
 
 app.put('/video', upload.single('file'), async (req, res, next) => {
-    const authorization = req.headers.authorization;
-    if (authorization === undefined) {
+    await isValidAuth(req).then(() => {
+    }).catch((err) => {
         res.status(404).end();
-        return;
-    }
-
-    const idToken = authorization.split(' ')[1];
-
-    let userInfo: any = {};
-    await admin.auth().verifyIdToken(idToken)
-    .then((decodedToken: any) => {
-        console.log(decodedToken);
-        userInfo = decodedToken;
-    }).catch((err: any) => {
-        console.log(err);
-        res.status(404).end();
-        return;
+        next();
     });
-
-    // TODO admin権限確認
 
     const photoId = req.body.photoId;
     const videoData = req.file;
     let response = {};
 
-    let video = await Videos.findOne({
+    let video: Videos = await postgresConnection.getRepository(Videos).findOne({
         where: {
             photograph_id: photoId,
         },
@@ -638,28 +547,11 @@ app.post('/download', async (req, res, next) => {
 });
 
 app.get('/contact', async (req, res, next) => {
-    const authorization = req.headers.authorization;
-    if (authorization === undefined) {
+    await isValidAuth(req).then(() => {
+    }).catch((err) => {
         res.status(404).end();
-        return;
-    }
-
-    const idToken = authorization.split(' ')[1];
-
-    let userInfo: any = {};
-    await admin.auth().verifyIdToken(idToken)
-    .then((decodedToken: any) => {
-        console.log(decodedToken);
-        userInfo = decodedToken;
-    }).catch((err: any) => {
-        console.log(err);
-        res.status(404).end();
-        return;
+        next();
     });
-
-    const name = userInfo.name;
-    const uid = userInfo.uid;
-    const email = userInfo.email;
 
     const query = req.query;
     const searchString = query.search;
@@ -668,17 +560,17 @@ app.get('/contact', async (req, res, next) => {
     let count: number = 0;
 
     if (searchString.length === 0 && createdTo.length === 0) {
-        count = await Contacts.count();
+        count = await postgresConnection.getRepository(Contacts).count();
 
         if (query.type === 'true') {
-            contacts = await Contacts.find({
+            contacts = await postgresConnection.getRepository(Contacts).find({
                 order: {
                     created_datetime: 'DESC',
                 },
                 take: 100,
             });
         } else {
-            contacts = await Contacts.find({
+            contacts = await postgresConnection.getRepository(Contacts).find({
                 order: {
                     created_datetime: 'ASC',
                 },
@@ -686,7 +578,7 @@ app.get('/contact', async (req, res, next) => {
             });
         }
     } else if (searchString.length !== 0 && createdTo.length === 0) {
-        count = await Contacts.createQueryBuilder()
+        count = await postgresConnection.getRepository(Contacts).createQueryBuilder()
         .where("account like '%' || :search || '%'", { search: searchString })
         .orWhere("name like '%' || :search || '%'", { search: searchString })
         .orWhere("email like '%' || :search || '%'", { search: searchString })
@@ -694,7 +586,7 @@ app.get('/contact', async (req, res, next) => {
         .getCount();
 
         if (query.type === 'true') {
-            contacts = await Contacts.createQueryBuilder()
+            contacts = await postgresConnection.getRepository(Contacts).createQueryBuilder()
             .where("account like '%' || :search || '%'", { search: searchString })
             .orWhere("name like '%' || :search || '%'", { search: searchString })
             .orWhere("email like '%' || :search || '%'", { search: searchString })
@@ -703,7 +595,7 @@ app.get('/contact', async (req, res, next) => {
             .limit(100)
             .getMany();
         } else {
-            contacts = await Contacts.createQueryBuilder()
+            contacts = await postgresConnection.getRepository(Contacts).createQueryBuilder()
             .where("account like '%' || :search || '%'", { search: searchString })
             .orWhere("name like '%' || :search || '%'", { search: searchString })
             .orWhere("email like '%' || :search || '%'", { search: searchString })
@@ -713,25 +605,25 @@ app.get('/contact', async (req, res, next) => {
             .getMany();
         }
     } else if (searchString.length === 0 && createdTo.length !== 0) {
-        count = await Contacts.createQueryBuilder()
+        count = await postgresConnection.getRepository(Contacts).createQueryBuilder()
         .where('created_datetime <= :to', { to: createdTo })
         .getCount();
 
         if (query.type === 'true') {
-            contacts = await Contacts.createQueryBuilder()
+            contacts = await postgresConnection.getRepository(Contacts).createQueryBuilder()
             .where('created_datetime <= :to', { to: createdTo })
             .orderBy('created_datetime', 'DESC')
             .limit(100)
             .getMany();
         } else {
-            contacts = await Contacts.createQueryBuilder()
+            contacts = await postgresConnection.getRepository(Contacts).createQueryBuilder()
             .where('created_datetime <= :to', { to: createdTo })
             .orderBy('created_datetime', 'ASC')
             .limit(100)
             .getMany();
         }
     } else if (searchString.length !== 0 && createdTo.length !== 0) {
-        count = await Contacts.createQueryBuilder()
+        count = await postgresConnection.getRepository(Contacts).createQueryBuilder()
         .where('created_datetime <= :to', { to: createdTo })
         .andWhere(
             new Brackets((q) => {
@@ -744,7 +636,7 @@ app.get('/contact', async (req, res, next) => {
         .getCount();
 
         if (query.type === 'true') {
-            contacts = await Contacts.createQueryBuilder()
+            contacts = await postgresConnection.getRepository(Contacts).createQueryBuilder()
             .where('created_datetime <= :to', { to: createdTo })
             .andWhere(
                 new Brackets((q) => {
@@ -758,7 +650,7 @@ app.get('/contact', async (req, res, next) => {
             .limit(100)
             .getMany();
         } else {
-            contacts = await Contacts.createQueryBuilder()
+            contacts = await postgresConnection.getRepository(Contacts).createQueryBuilder()
             .where('created_datetime <= :to', { to: createdTo })
             .andWhere(
                 new Brackets((q) => {

@@ -1,18 +1,40 @@
-{
-    "type": "postgres",
-    "host": "postgres", 
-    "port": 5432,
-    "username": "wataru",  
-    "password": "wataru",  
-    "database": "seventh_project", 
-    "synchronize": false,
-    "logging": false,
-    "entities": ["src/entities/**/*.ts"],
-    "migrations": ["src/db/migrations/**/*.ts"],
-    "subscribers": ["src/db/subscribers/**/*.ts"],
-    "cli": {
-       "entitiesDir": "src/entities",
-       "migrationsDir": "src/db/migrations",
-       "subscribersDir": "src/db/subscribers"
-    }
- }
+[
+   {
+      "name": "postgres",
+      "type": "postgres",
+      "host": "postgres", 
+      "port": 5432,
+      "username": "wataru",  
+      "password": "wataru",  
+      "database": "seventh_project", 
+      "synchronize": false,
+      "logging": false,
+      "entities": ["src/entities/postgres/*.ts"],
+      "migrations": ["src/db/migrations/**/*.ts"],
+      "subscribers": ["src/db/subscribers/**/*.ts"],
+      "cli": {
+         "entitiesDir": "src/entities/postgres",
+         "migrationsDir": "src/db/migrations",
+         "subscribersDir": "src/db/subscribers"
+      }
+   },
+   {
+      "name": "mysql",
+      "type": "mysql",
+      "host": "mysql", 
+      "port": 3306,
+      "username": "wataru",  
+      "password": "wataru",  
+      "database": "seventh_project", 
+      "synchronize": false,
+      "logging": false,
+      "entities": ["src/entities/mysql/*.ts"],
+      "migrations": ["src/db/migrations/**/*.ts"],
+      "subscribers": ["src/db/subscribers/**/*.ts"],
+      "cli": {
+         "entitiesDir": "src/entities/mysql",
+         "migrationsDir": "src/db/migrations",
+         "subscribersDir": "src/db/subscribers"
+      }
+   }
+]
