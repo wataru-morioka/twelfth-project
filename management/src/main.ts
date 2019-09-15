@@ -35,6 +35,7 @@ import { getConnectionOptions, createConnection, BaseEntity, Brackets,
      Like, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import { resolve } from 'path';
 import { Accounts } from './entities/mysql/accounts';
+
 const app = express();
 
 app.use(bodyParser.json());
@@ -64,44 +65,8 @@ const mysqlConnect = async () => {
 
 mysqlConnect();
 
-export class Postgres{
-    private client: Client;
-
-    constructor() {
-        this.client = new Client({
-            database: process.env.POSTGRES_DB,
-            user: process.env.POSTGRES_USER,
-            password: process.env.POSTGRES_PASSWORD,
-            host: 'postgres',
-            port: 5432,
-        });
-        this.client.connect();
-    }
-
-    public async query(sql: string, parameters: any[] = []) {
-        return (await this.client.query(sql, parameters)).rows;
-    }
-
-    public async exec(sql: string, parameters: any[] = []) {
-        return await this.client.query(sql, parameters);
-    }
-
-    public async end() {
-        await this.client.end();
-    }
-}
-
-// app.post('/minify', upload2.single('file'), async (req, res, next) => {
-//     const fileName = req.file.originalname;
-
-//     const files = await imagemin([`./uploads/tmp/${fileName}`], {
-//     });
-
-//     res.download(`./minified/tmp/${fileName}`);
-// });
-
 const isValidAuth = (req: any): Promise<void> => {
-    return new Promise(async (resolve, reject) => {
+    return new Promise<void>(async (resolve, reject) => {
         const authorization = req.headers.authorization;
         if (authorization === undefined) {
             reject();
@@ -304,27 +269,6 @@ app.get('/video', async (req, res, next) => {
     res.send(response);
 });
 
-app.post('/download', async (req, res, next) => {
-    if (!req.body) {
-        res.status(500).end('no id');
-        next();
-    }
-    // console.log(req.params.id);
-    console.log(req.body);
-    console.log(req.body.id);
-
-    const pg = new Postgres();
-    const sql = 'select file_name, mimetype, data from photos where id = $1';
-    const parameters = [req.body.id];
-    await pg.query(sql, parameters).then((rows) => {
-        console.log(rows[0]);
-        res.send(rows[0]);
-    }).catch((err) => {
-        console.log(err);
-        res.status(500).end('server err');
-    });
-});
-
 app.get('/download', async (req, res, next) => {
     await isValidAuth(req).then(() => {
     }).catch((err) => {
@@ -523,27 +467,6 @@ app.put('/video', upload.single('file'), async (req, res, next) => {
     });
 
     res.send(response);
-});
-
-app.post('/download', async (req, res, next) => {
-    if (!req.body) {
-        res.status(500).end('no id');
-        next();
-    }
-    // console.log(req.params.id);
-    console.log(req.body);
-    console.log(req.body.id);
-
-    const pg = new Postgres();
-    const sql = 'select file_name, mimetype, data from photos where id = $1';
-    const parameters = [req.body.id];
-    await pg.query(sql, parameters).then((rows) => {
-        console.log(rows[0]);
-        res.send(rows[0]);
-    }).catch((err) => {
-        console.log(err);
-        res.status(500).end('server err');
-    });
 });
 
 app.get('/contact', async (req, res, next) => {
