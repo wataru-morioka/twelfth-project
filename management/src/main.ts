@@ -65,7 +65,7 @@ const mysqlConnect = async () => {
 
 mysqlConnect();
 
-const isValidAuth = (req: any): Promise<void> => {
+const isValidAuth = (req: any, annonymous: boolean = false): Promise<void> => {
     return new Promise<void>(async (resolve, reject) => {
         const authorization = req.headers.authorization;
         if (authorization === undefined) {
@@ -74,16 +74,26 @@ const isValidAuth = (req: any): Promise<void> => {
         }
         const idToken = authorization.split(' ')[1];
         let userInfo: any = {};
+        let isValidAnnonymous = false;
         await admin.auth().verifyIdToken(idToken)
         .then((decodedToken: any) => {
             console.log(decodedToken);
             userInfo = decodedToken;
+            if (annonymous) {
+                resolve();
+                isValidAnnonymous = true;
+                return;
+            }
         }).catch((err: any) => {
             console.log(err);
             reject();
             return;
         });
-        // TODO admin権限確認
+
+        if (isValidAnnonymous) {
+            return;
+        }
+
         const count = await mysqlConnection.getRepository(Accounts).createQueryBuilder()
         .where('uid = :uid', { uid: userInfo.uid })
         .andWhere('admin_flag = :bool', { bool: true })
@@ -237,7 +247,7 @@ app.post('/video', upload.single('file'), async (req, res, next) => {
 });
 
 app.get('/video', async (req, res, next) => {
-    await isValidAuth(req).then(() => {
+    await isValidAuth(req, true).then(() => {
     }).catch((err) => {
         res.status(404).end();
         next();
@@ -293,7 +303,7 @@ app.get('/download', async (req, res, next) => {
 });
 
 app.get('/photographs', async (req, res, next) => {
-    await isValidAuth(req).then(() => {
+    await isValidAuth(req, true).then(() => {
     }).catch((err) => {
         res.status(404).end();
         next();
