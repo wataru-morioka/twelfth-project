@@ -36,7 +36,11 @@
     "yamljs": "^0.3.0"
   },
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.0.20",
+    "@types/fs-extra": "^8.0.0",
     "firebase-admin": "^8.5.0",
+    "fluent-ffmpeg": "^2.1.2",
+    "fs-extra": "^8.1.0",
     "imagemin": "^7.0.0",
     "imagemin-gifsicle": "^6.0.1",
     "imagemin-jpegtran": "^6.0.0",

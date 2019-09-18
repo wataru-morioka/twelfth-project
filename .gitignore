@@ -2,6 +2,7 @@ management/node_modules/
 management/dist/
 management/uploads/
 management/minified/
+management/public/
 webrtc/node_modules/
 webrtc/dist/
 firebase-service.json

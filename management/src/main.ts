@@ -11,23 +11,26 @@ const imageminPngquant = require('imagemin-pngquant');
 const imageminSvgo = require('imagemin-svgo');
 const imageminGifsicle = require('imagemin-gifsicle');
 const imageminMozjpeg = require('imagemin-mozjpeg');
-const storage2 = multer.diskStorage({
+const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, './uploads/tmp');
+        cb(null, './public/hls');
     },
     filename: (req, file, cb) => {
         cb(null, file.originalname);
     },
 });
 // // アップロードされたファイルを一時的にメモリへ保存する場合
-const storage = multer.memoryStorage();
-const upload = multer({ storage });
-const upload2 = multer({ storage: storage2 });
+const memory = multer.memoryStorage();
+const uploadMemory = multer({ storage: memory });
+const uploadStorage = multer({ storage });
 const gm = require('gm');
 const fs = require('fs');
 const moment = require('moment');
 const swaggerDocument = yamljs.load('swagger.yaml');
 const admin = require('firebase-admin');
+const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+const ffmpeg = require('fluent-ffmpeg');
+ffmpeg.setFfmpegPath(ffmpegPath);
 import { Contacts } from './entities/postgres/contacts';
 import { Photographs } from './entities/postgres/photographs';
 import { Videos } from './entities/postgres/videos';
@@ -35,12 +38,14 @@ import { getConnectionOptions, createConnection, BaseEntity, Brackets,
      Like, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import { resolve } from 'path';
 import { Accounts } from './entities/mysql/accounts';
+import fsExtra from 'fs-extra';
 
 const app = express();
 
 app.use(bodyParser.json());
 app.use(cors());
 app.use('/api-docs', swaggerUiExpress.serve, swaggerUiExpress.setup(swaggerDocument));
+app.use(express.static('./public'));
 
 admin.initializeApp({
     credential: admin.credential.cert(require('../firebase-service.json')),
@@ -64,6 +69,45 @@ const mysqlConnect = async () => {
 };
 
 mysqlConnect();
+
+const exchangeCodec = (path: string, folder: string): Promise<void> => {
+    return new Promise<void>(async (resolve, reject) => {
+        if (fs.existsSync(folder)) {
+            fsExtra.removeSync(folder);
+        }
+        fs.mkdirSync(folder);
+
+        ffmpeg(path)
+        .audioCodec('libopus')
+        // .audioBitrate(96)
+        .outputOptions([
+            '-codec: copy',
+            '-hls_time 10',
+            '-hls_playlist_type vod',
+            `-hls_segment_filename ${folder}/%03d.ts`,
+        ])
+        .output(`${folder}/index.m3u8`)
+        .on('start', (commandLine: any) => {
+            console.log(`Running ffmpeg with command:${commandLine}`);
+        })
+        .on('codecData', (data: any) => {
+            console.log(`Input is${data.audio}audio with${data.video}video`);
+        })
+        .on('progress', (progress: any) => {
+            console.log(`Processing:${progress.percent}% done`);
+        })
+        .on('error', (err: any, stdout: any, stderr: any) => {
+            console.log(`Error while Processing video: ${err.message}`);
+            console.log(stderr);
+            reject();
+        })
+        .on('end', () => {
+            console.log('Transcoding succeeded!');
+            resolve();
+        })
+        .run();
+    });
+};
 
 const isValidAuth = (req: any, annonymous: boolean = false): Promise<void> => {
     return new Promise<void>(async (resolve, reject) => {
@@ -163,7 +207,7 @@ app.get('/minify', async (req, res, next) => {
     res.send(response);
 });
 
-app.post('/photographs', upload.single('file'), async (req, res, next) => {
+app.post('/photographs', uploadMemory.single('file'), async (req, res, next) => {
     await isValidAuth(req).then(() => {
     }).catch((err) => {
         res.status(404).end();
@@ -204,7 +248,7 @@ app.post('/photographs', upload.single('file'), async (req, res, next) => {
     res.status(200).end('ok');
 });
 
-app.post('/video', upload.single('file'), async (req, res, next) => {
+app.post('/video', uploadMemory.single('file'), async (req, res, next) => {
     await isValidAuth(req).then(() => {
     }).catch((err) => {
         res.status(404).end();
@@ -360,7 +404,7 @@ app.delete('/photographs', async (req, res, next) => {
     res.send(response);
 });
 
-app.put('/photographs', upload.single('file'), async (req, res, next) => {
+app.put('/photographs', uploadMemory.single('file'), async (req, res, next) => {
     await isValidAuth(req).then(() => {
     }).catch((err) => {
         res.status(404).end();
@@ -419,62 +463,77 @@ app.put('/photographs', upload.single('file'), async (req, res, next) => {
     res.send(response);
 });
 
-app.put('/video', upload.single('file'), async (req, res, next) => {
+app.put('/video', uploadStorage.single('file'), async (req, res, next) => {
+    let response = {
+        result: false,
+    };
+
+    const path = `./public/hls/${req.file.originalname}`;
+    const folder = `./public/hls/video-${req.body.photoId}`;
+
+    await exchangeCodec(path, folder).then(() => {
+        console.log('success');
+        response = {
+            result: true,
+        };
+    }).catch((err) => {
+        console.log(err);
+    });
+
     await isValidAuth(req).then(() => {
     }).catch((err) => {
         res.status(404).end();
         next();
     });
 
-    const photoId = req.body.photoId;
-    const videoData = req.file;
-    let response = {};
+    // const photoId = req.body.photoId;
+    // const videoData = req.file;
 
-    let video: Videos = await postgresConnection.getRepository(Videos).findOne({
-        where: {
-            photograph_id: photoId,
-        },
-    });
+    // let video: Videos = await postgresConnection.getRepository(Videos).findOne({
+    //     where: {
+    //         photograph_id: photoId,
+    //     },
+    // });
 
-    const now = moment(new Date()).format('YYYY-MM-DD HH:mm:ss');
-    const fileName = videoData.originalname;
-    const buffer = videoData.buffer;
-    const mimetype = videoData.mimetype;
-    const size = videoData.size;
-    console.log(fileName);
-    console.log(buffer);
-    console.log(mimetype);
-    console.log(size);
-    console.log(process.env.POSTGRES_DB);
+    // const now = moment(new Date()).format('YYYY-MM-DD HH:mm:ss');
+    // const fileName = videoData.originalname;
+    // const buffer = videoData.buffer;
+    // const mimetype = videoData.mimetype;
+    // const size = videoData.size;
+    // console.log(fileName);
+    // console.log(buffer);
+    // console.log(mimetype);
+    // console.log(size);
+    // console.log(process.env.POSTGRES_DB);
 
-    if (video) {
-        video.file_name = fileName;
-        video.data = buffer;
-        video.mimetype = mimetype;
-        video.size = size;
-        video.modified_datetime = now;
-    } else {
-        video = new Videos();
-        video.photograph_id = photoId;
-        video.mimetype = mimetype;
-        video.file_name = fileName;
-        video.size = size;
-        video.data = buffer;
-        video.created_datetime = now;
-        video.modified_datetime = now;
-    }
+    // if (video) {
+    //     video.file_name = fileName;
+    //     video.data = buffer;
+    //     video.mimetype = mimetype;
+    //     video.size = size;
+    //     video.modified_datetime = now;
+    // } else {
+    //     video = new Videos();
+    //     video.photograph_id = photoId;
+    //     video.mimetype = mimetype;
+    //     video.file_name = fileName;
+    //     video.size = size;
+    //     video.data = buffer;
+    //     video.created_datetime = now;
+    //     video.modified_datetime = now;
+    // }
 
-    await video.save()
-    .then(() => {
-        response = {
-            result: true,
-        };
-    })
-    .catch(() => {
-        response = {
-            result: false,
-        };
-    });
+    // await video.save()
+    // .then(() => {
+    //     response = {
+    //         result: true,
+    //     };
+    // })
+    // .catch(() => {
+    //     response = {
+    //         result: false,
+    //     };
+    // });
 
     res.send(response);
 });
