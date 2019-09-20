@@ -138,6 +138,14 @@ const isValidAuth = (req: any, annonymous: boolean = false): Promise<void> => {
             return;
         }
 
+        if (mysqlConnection === null) {
+            await mysqlConnect();
+        }
+
+        if (postgresConnection === null) {
+            await postgresConnect();
+        }
+
         const count = await mysqlConnection.getRepository(Accounts).createQueryBuilder()
         .where('uid = :uid', { uid: userInfo.uid })
         .andWhere('admin_flag = :bool', { bool: true })
