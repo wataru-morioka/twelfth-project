@@ -2,6 +2,16 @@ import express from 'express';
 import swaggerUiExpress from 'swagger-ui-express';
 import multer from 'multer';
 import yamljs from 'yamljs';
+import log4js from 'log4js';
+log4js.configure({
+    appenders: {
+        system: { type: 'dateFile', filename: './logs/access.log', pattern: '-yyyy-MM-dd' },
+    },
+    categories: {
+        default: { appenders:['system'], level: 'debug' },
+    }
+});
+const logger = log4js.getLogger();
 const cors = require('cors');
 import { Client } from 'pg';
 const bodyParser = require('body-parser');
@@ -88,21 +98,21 @@ const exchangeCodec = (path: string, folder: string): Promise<void> => {
         ])
         .output(`${folder}/index.m3u8`)
         .on('start', (commandLine: any) => {
-            console.log(`Running ffmpeg with command:${commandLine}`);
+            logger.info(`Running ffmpeg with command:${commandLine}`);
         })
         .on('codecData', (data: any) => {
-            console.log(`Input is${data.audio}audio with${data.video}video`);
+            logger.info(`Input is${data.audio}audio with${data.video}video`);
         })
         .on('progress', (progress: any) => {
-            console.log(`Processing:${progress.percent}% done`);
+            logger.info(`Processing:${progress.percent}% done`);
         })
         .on('error', (err: any, stdout: any, stderr: any) => {
-            console.log(`Error while Processing video: ${err.message}`);
+            logger.error(`Error while Processing video: ${err.message}`);
             console.log(stderr);
             reject();
         })
         .on('end', () => {
-            console.log('Transcoding succeeded!');
+            logger.info('Transcoding succeeded!');
             resolve();
         })
         .run();
@@ -122,6 +132,8 @@ const isValidAuth = (req: any, annonymous: boolean = false): Promise<void> => {
         await admin.auth().verifyIdToken(idToken)
         .then((decodedToken: any) => {
             console.log(decodedToken);
+            logger.info(decodedToken.uid);
+            logger.info(decodedToken.email);
             userInfo = decodedToken;
             if (annonymous) {
                 resolve();
@@ -130,6 +142,7 @@ const isValidAuth = (req: any, annonymous: boolean = false): Promise<void> => {
             }
         }).catch((err: any) => {
             console.log(err);
+            logger.error(err);
             reject();
             return;
         });
@@ -164,6 +177,8 @@ app.get('/minify', async (req, res, next) => {
         res.status(404).end();
         next();
     });
+
+    logger.info('minify');
 
     const photoId = req.query.photoId;
     const photo: Photographs = await postgresConnection.getRepository(Photographs).findOne({
@@ -201,12 +216,13 @@ app.get('/minify', async (req, res, next) => {
     let response = {};
 
     await photo!.save().then((result) => {
-        console.log('success');
+        logger.info('success');
         response = {
             result: true,
         };
     }).catch((err) => {
         console.log(err);
+        logger.error(err);
         response = {
             result: false,
         };
@@ -238,6 +254,8 @@ app.post('/photographs', uploadMemory.single('file'), async (req, res, next) => 
 
     // TODO サイズチェック
 
+    logger.info('thumbnail');
+
     const now = moment(new Date()).format('YYYY-MM-DD HH:mm:ss');
     const photo = new Photographs();
     photo.mimetype = mimetype;
@@ -248,9 +266,10 @@ app.post('/photographs', uploadMemory.single('file'), async (req, res, next) => 
     photo.modified_datetime = now;
 
     await photo.save().then((result) => {
-        console.log('success');
+        logger.info('success');
     }).catch((err) => {
         console.log(err);
+        logger.error(err);
     });
 
     res.status(200).end('ok');
@@ -279,6 +298,8 @@ app.post('/video', uploadMemory.single('file'), async (req, res, next) => {
 
     // TODO サイズチェック
 
+    logger.info('video');
+
     const now = moment(new Date()).format('YYYY-MM-DD HH:mm:ss');
     const video = new Videos();
     video.photograph_id = 1;
@@ -293,6 +314,7 @@ app.post('/video', uploadMemory.single('file'), async (req, res, next) => {
         console.log('success');
     }).catch((err) => {
         console.log(err);
+        logger.error(err);
     });
 
     res.status(200).end('ok');
@@ -389,7 +411,7 @@ app.delete('/photographs', async (req, res, next) => {
 
     const photoId = req.query.photoId;
     let response = {};
-    console.log(photoId);
+    logger.info(`delete photo: ${photoId}`);
 
     const photo: Photographs = await postgresConnection.getRepository(Photographs).findOne({
         where: {
@@ -424,6 +446,8 @@ app.put('/photographs', uploadMemory.single('file'), async (req, res, next) => {
     const subTitle = req.body.subTitle;
     const title = req.body.title;
     let response = {};
+
+    logger.info(`set photo: ${photoId}`);
 
     const photo: Photographs = await postgresConnection.getRepository(Photographs).findOne({
         where: {
@@ -479,13 +503,16 @@ app.put('/video', uploadStorage.single('file'), async (req, res, next) => {
     const path = `./public/hls/${req.file.originalname}`;
     const folder = `./public/hls/video-${req.body.photoId}`;
 
+    logger.info(`set video: ${req.body.photoId}`);
+
     await exchangeCodec(path, folder).then(() => {
-        console.log('success');
+        logger.info('success');
         response = {
             result: true,
         };
     }).catch((err) => {
         console.log(err);
+        logger.error(err);
     });
 
     await isValidAuth(req).then(() => {
@@ -552,6 +579,8 @@ app.get('/contact', async (req, res, next) => {
         res.status(404).end();
         next();
     });
+
+    logger.info('contact');
 
     const query = req.query;
     const searchString = query.search;
