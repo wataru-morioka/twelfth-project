@@ -8,6 +8,8 @@
         "removeComments": true,
         "strict": true,
         "esModuleInterop": true,
+        "emitDecoratorMetadata": true,
+        "experimentalDecorators": true
     },
     "include": [
         "./src/**/*"

@@ -1,0 +1,38 @@
+[2019-09-26T23:50:20.361] [INFO] default - test
+[2019-09-26T23:58:42.501] [INFO] default - {
+  name: '森岡渉',
+  picture: 'https://lh6.googleusercontent.com/-Ub9r04wl12E/AAAAAAAAAAI/AAAAAAAAAAA/ACHi3rd7OlWiAKs14mVbrogIIexx-U-KhQ/photo.jpg',
+  iss: 'https://securetoken.google.com/seventhproject-248123',
+  aud: 'seventhproject-248123',
+  auth_time: 1568957666,
+  user_id: '1HhuWaoYXAgx4sWcMH5C7YMp6QQ2',
+  sub: '1HhuWaoYXAgx4sWcMH5C7YMp6QQ2',
+  iat: 1569509921,
+  exp: 1569513521,
+  email: 'iceman.morioka@gmail.com',
+  email_verified: true,
+  firebase: {
+    identities: { 'google.com': [Array], email: [Array] },
+    sign_in_provider: 'google.com'
+  },
+  uid: '1HhuWaoYXAgx4sWcMH5C7YMp6QQ2'
+}
+[2019-09-26T23:58:54.405] [INFO] default - {
+  name: '森岡渉',
+  picture: 'https://lh6.googleusercontent.com/-Ub9r04wl12E/AAAAAAAAAAI/AAAAAAAAAAA/ACHi3rd7OlWiAKs14mVbrogIIexx-U-KhQ/photo.jpg',
+  iss: 'https://securetoken.google.com/seventhproject-248123',
+  aud: 'seventhproject-248123',
+  auth_time: 1568957666,
+  user_id: '1HhuWaoYXAgx4sWcMH5C7YMp6QQ2',
+  sub: '1HhuWaoYXAgx4sWcMH5C7YMp6QQ2',
+  iat: 1569509921,
+  exp: 1569513521,
+  email: 'iceman.morioka@gmail.com',
+  email_verified: true,
+  firebase: {
+    identities: { 'google.com': [Array], email: [Array] },
+    sign_in_provider: 'google.com'
+  },
+  uid: '1HhuWaoYXAgx4sWcMH5C7YMp6QQ2'
+}
+[2019-09-26T23:58:54.454] [INFO] default - contact
