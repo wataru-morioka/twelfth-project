@@ -1,26 +1,22 @@
 import express from 'express';
-import swaggerUiExpress from 'swagger-ui-express';
 import multer from 'multer';
-import yamljs from 'yamljs';
-import log4js from 'log4js';
-log4js.configure({
-    appenders: {
-        system: { type: 'dateFile', filename: './logs/access.log', pattern: '-yyyy-MM-dd' },
-    },
-    categories: {
-        default: { appenders:['system'], level: 'debug' },
-    },
-});
-const logger = log4js.getLogger();
+import { Contacts } from './entities/postgres/contacts';
+import { Photographs } from './entities/postgres/photographs';
+import { Videos } from './entities/postgres/videos';
+import { Brackets } from 'typeorm';
+import { exchangeCodec, logger, isValidAuth,
+        postgresConnection } from './utils';
+const fs = require('fs');
+const moment = require('moment');
 const cors = require('cors');
-import { Client } from 'pg';
 const bodyParser = require('body-parser');
 const imagemin = require('imagemin');
-// const imageminJpegtran = require('imagemin-jpegtran');
 const imageminPngquant = require('imagemin-pngquant');
 const imageminSvgo = require('imagemin-svgo');
 const imageminGifsicle = require('imagemin-gifsicle');
 const imageminMozjpeg = require('imagemin-mozjpeg');
+
+// 動画アップロード先
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, './public/hls');
@@ -29,149 +25,21 @@ const storage = multer.diskStorage({
         cb(null, file.originalname);
     },
 });
-// // アップロードされたファイルを一時的にメモリへ保存する場合
+const uploadStorage = multer({ storage });
+
+// アップロードされたファイルを一時的にメモリへ保存する場合
 const memory = multer.memoryStorage();
 const uploadMemory = multer({ storage: memory });
-const uploadStorage = multer({ storage });
-const gm = require('gm');
-const fs = require('fs');
-const moment = require('moment');
-const swaggerDocument = yamljs.load('swagger.yaml');
-const admin = require('firebase-admin');
-const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
-const ffmpeg = require('fluent-ffmpeg');
-ffmpeg.setFfmpegPath(ffmpegPath);
-import { Contacts } from './entities/postgres/contacts';
-import { Photographs } from './entities/postgres/photographs';
-import { Videos } from './entities/postgres/videos';
-import { getConnectionOptions, createConnection, BaseEntity, Brackets,
-     Like, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
-import { resolve } from 'path';
-import { Accounts } from './entities/mysql/accounts';
-import fsExtra from 'fs-extra';
 
+// 以下、express設定
 const app = express();
-
 app.use(bodyParser.json());
 app.use(cors());
-app.use('/api-docs', swaggerUiExpress.serve, swaggerUiExpress.setup(swaggerDocument));
 app.use(express.static('./public'));
 
-admin.initializeApp({
-    credential: admin.credential.cert(require('../firebase-service.json')),
-});
-
-let postgresConnection: any = null;
-let mysqlConnection: any = null;
-
-const postgresConnect = async () => {
-    const connectionOptions = await getConnectionOptions('postgres');
-    postgresConnection = await createConnection(connectionOptions);
-    BaseEntity.useConnection(postgresConnection);
-};
-
-postgresConnect();
-
-const mysqlConnect = async () => {
-    const connectionOptions = await getConnectionOptions('mysql');
-    mysqlConnection = await createConnection(connectionOptions);
-    // BaseEntity.useConnection(mysqlConnection);
-};
-
-mysqlConnect();
-
-const exchangeCodec = (path: string, folder: string): Promise<void> => {
-    return new Promise<void>(async (resolve, reject) => {
-        if (fs.existsSync(folder)) {
-            fsExtra.removeSync(folder);
-        }
-        fs.mkdirSync(folder);
-
-        ffmpeg(path)
-        .audioCodec('libopus')
-        // .audioBitrate(96)
-        .outputOptions([
-            '-codec: copy',
-            '-hls_time 10',
-            '-hls_playlist_type vod',
-            `-hls_segment_filename ${folder}/%03d.ts`,
-        ])
-        .output(`${folder}/index.m3u8`)
-        .on('start', (commandLine: any) => {
-            logger.info(`Running ffmpeg with command:${commandLine}`);
-        })
-        .on('codecData', (data: any) => {
-            logger.info(`Input is${data.audio}audio with${data.video}video`);
-        })
-        .on('progress', (progress: any) => {
-            logger.info(`Processing:${progress.percent}% done`);
-        })
-        .on('error', (err: any, stdout: any, stderr: any) => {
-            logger.error(`Error while Processing video: ${err.message}`);
-            console.log(stderr);
-            reject();
-        })
-        .on('end', () => {
-            logger.info('Transcoding succeeded!');
-            resolve();
-        })
-        .run();
-    });
-};
-
-const isValidAuth = (req: any, annonymous: boolean = false): Promise<void> => {
-    return new Promise<void>(async (resolve, reject) => {
-        const authorization = req.headers.authorization;
-        if (authorization === undefined) {
-            reject();
-            return;
-        }
-        const idToken = authorization.split(' ')[1];
-        let userInfo: any = {};
-        let isValidAnnonymous = false;
-        await admin.auth().verifyIdToken(idToken)
-        .then((decodedToken: any) => {
-            console.log(decodedToken);
-            logger.info(decodedToken.uid);
-            logger.info(decodedToken.email);
-            userInfo = decodedToken;
-            if (annonymous) {
-                resolve();
-                isValidAnnonymous = true;
-                return;
-            }
-        }).catch((err: any) => {
-            console.log(err);
-            logger.error(err);
-            reject();
-            return;
-        });
-
-        if (isValidAnnonymous) {
-            return;
-        }
-
-        if (mysqlConnection === null) {
-            await mysqlConnect();
-        }
-
-        if (postgresConnection === null) {
-            await postgresConnect();
-        }
-
-        const count = await mysqlConnection.getRepository(Accounts).createQueryBuilder()
-        .where('uid = :uid', { uid: userInfo.uid })
-        .andWhere('admin_flag = :bool', { bool: true })
-        .getCount();
-        if (count >= 1) {
-            resolve();
-            return;
-        }
-        reject();
-    });
-};
-
+// プロジェクト動画のサムネイルを圧縮リクエスト
 app.get('/minify', async (req, res, next) => {
+    // 管理者権限チェック
     await isValidAuth(req).then(() => {
     }).catch((err) => {
         res.status(404).end();
@@ -179,7 +47,6 @@ app.get('/minify', async (req, res, next) => {
     });
 
     logger.info('minify');
-
     const photoId = req.query.photoId;
     const photo: Photographs = await postgresConnection.getRepository(Photographs).findOne({
         where: {
@@ -187,14 +54,14 @@ app.get('/minify', async (req, res, next) => {
         },
     });
 
-    // tmpフォルダに書き出し
+    // 圧縮前、/uploads/tmpフォルダに書き出し
     const fileName = photo!.file_name;
-    // const file = new File([photo!.data], fileName, { type: photo!.mimetype });
     await fs.createWriteStream(`./uploads/tmp/${fileName}`).write(photo!.data);
+
+    // 圧縮後、/minified/tmpディクトリに書き出し
     const files = await imagemin([`./uploads/tmp/${fileName}`], {
         destination: './minified/tmp',
         plugins: [
-            // imageminJpegtran(),
             imageminMozjpeg({ quality: 80 }),
             imageminPngquant({
                 quality: [0.6, 0.8],
@@ -202,36 +69,36 @@ app.get('/minify', async (req, res, next) => {
             imageminGifsicle({
                 interlaced: false,
                 optimizationLevel: 3,
-                // colors:180
             }),
             imageminSvgo(),
         ],
+    }).catch((err: any) => {
+        console.log(err);
+        logger.error(err);
+        res.status(500).end('サーバ処理に失敗');
     });
 
     const now = moment(new Date()).format('YYYY-MM-DD HH:mm:ss');
+    // 圧縮後のファイルを読み取りバイトバッファを取得
     const data = fs.readFileSync(`./minified/tmp/${fileName}`);
     photo!.data = data;
     photo!.size = data.length;
     photo!.modified_datetime = now;
-    let response = {};
 
-    await photo!.save().then((result) => {
+    await photo!.save()
+    .then((result) => {
         logger.info('success');
-        response = {
-            result: true,
-        };
+        res.status(200).end('ok');
     }).catch((err) => {
         console.log(err);
         logger.error(err);
-        response = {
-            result: false,
-        };
+        res.status(500).end('サーバ処理に失敗');
     });
-
-    res.send(response);
 });
 
+// addボタンにて、新規プロジェクトの動画サムネイルの追加リクエスト
 app.post('/photographs', uploadMemory.single('file'), async (req, res, next) => {
+    // 管理者権限チェック
     await isValidAuth(req).then(() => {
     }).catch((err) => {
         res.status(404).end();
@@ -242,118 +109,31 @@ app.post('/photographs', uploadMemory.single('file'), async (req, res, next) => 
         res.status(500).end('no file');
         next();
     }
-    const fileName = req.file.originalname;
-    const buffer = req.file.buffer;
-    const mimetype = req.file.mimetype;
-    const size = req.file.size;
-    console.log(fileName);
-    console.log(buffer);
-    console.log(mimetype);
-    console.log(size);
-    console.log(process.env.POSTGRES_DB);
-
-    // TODO サイズチェック
 
     logger.info('thumbnail');
-
     const now = moment(new Date()).format('YYYY-MM-DD HH:mm:ss');
     const photo = new Photographs();
-    photo.mimetype = mimetype;
-    photo.file_name = fileName;
-    photo.size = size;
-    photo.data = buffer;
+    photo.mimetype = req.file.mimetype;
+    photo.file_name = req.file.originalname;
+    photo.size = req.file.size;
+    photo.data = req.file.buffer;
     photo.created_datetime = now;
     photo.modified_datetime = now;
 
-    await photo.save().then((result) => {
+    await photo.save()
+    .then((result) => {
         logger.info('success');
+        res.status(200).end('ok');
     }).catch((err) => {
         console.log(err);
         logger.error(err);
+        res.status(500).end('サーバ処理に失敗');
     });
-
-    res.status(200).end('ok');
 });
 
-app.post('/video', uploadMemory.single('file'), async (req, res, next) => {
-    await isValidAuth(req).then(() => {
-    }).catch((err) => {
-        res.status(404).end();
-        next();
-    });
-
-    if (!req.file) {
-        res.status(500).end('no file');
-        next();
-    }
-    const fileName = req.file.originalname;
-    const buffer = req.file.buffer;
-    const mimetype = req.file.mimetype;
-    const size = req.file.size;
-    console.log(fileName);
-    console.log(buffer);
-    console.log(mimetype);
-    console.log(size);
-    console.log(process.env.POSTGRES_DB);
-
-    // TODO サイズチェック
-
-    logger.info('video');
-
-    const now = moment(new Date()).format('YYYY-MM-DD HH:mm:ss');
-    const video = new Videos();
-    video.photograph_id = 1;
-    video.mimetype = mimetype;
-    video.file_name = fileName;
-    video.size = size;
-    video.data = buffer;
-    video.created_datetime = now;
-    video.modified_datetime = now;
-
-    await video.save().then((result) => {
-        console.log('success');
-    }).catch((err) => {
-        console.log(err);
-        logger.error(err);
-    });
-
-    res.status(200).end('ok');
-});
-
-app.get('/video', async (req, res, next) => {
-    await isValidAuth(req, true).then(() => {
-    }).catch((err) => {
-        res.status(404).end();
-        next();
-    });
-
-    const photoId = req.query.photoId;
-    const video: Videos = await postgresConnection.getRepository(Videos).findOne({
-        where: {
-            photograph_id: photoId,
-        },
-    });
-
-    let response = {};
-    console.log(video);
-
-    if (video) {
-        video.created_datetime = moment(new Date(video!.created_datetime))
-                                .format('YYYY-MM-DD HH:mm:ss');
-        response = {
-            result: true,
-            videoInfo: video,
-        };
-    } else {
-        response = {
-            result: false,
-        };
-    }
-
-    res.send(response);
-});
-
+// 現在の動画サムネイルのダウンロードリクエスト
 app.get('/download', async (req, res, next) => {
+    // 管理者権限チェック
     await isValidAuth(req).then(() => {
     }).catch((err) => {
         res.status(404).end();
@@ -361,7 +141,6 @@ app.get('/download', async (req, res, next) => {
     });
 
     const photoId = req.query.photoId;
-
     const photo: Photographs = await postgresConnection.getRepository(Photographs).findOne({
         where: {
             id: photoId,
@@ -376,7 +155,9 @@ app.get('/download', async (req, res, next) => {
     res.send(response);
 });
 
+// プロジェクト動画リスト取得リクエスト
 app.get('/photographs', async (req, res, next) => {
+    // 匿名認証（サイト閲覧者かどうか）チェック
     await isValidAuth(req, true).then(() => {
     }).catch((err) => {
         res.status(404).end();
@@ -389,6 +170,7 @@ app.get('/photographs', async (req, res, next) => {
         },
     });
 
+    // 日付フォーマット変換
     photos.forEach((photo: any) => {
         photo.created_datetime = moment(new Date(photo.created_datetime))
                                     .format('YYYY-MM-DD HH:mm:ss');
@@ -402,7 +184,9 @@ app.get('/photographs', async (req, res, next) => {
     res.send(response);
 });
 
+// プロジェクト一覧からプロジェクトを消去リクエスト
 app.delete('/photographs', async (req, res, next) => {
+    // 管理者権限チェック
     await isValidAuth(req).then(() => {
     }).catch((err) => {
         res.status(404).end();
@@ -410,9 +194,7 @@ app.delete('/photographs', async (req, res, next) => {
     });
 
     const photoId = req.query.photoId;
-    let response = {};
     logger.info(`delete photo: ${photoId}`);
-
     const photo: Photographs = await postgresConnection.getRepository(Photographs).findOne({
         where: {
             id: photoId,
@@ -421,20 +203,16 @@ app.delete('/photographs', async (req, res, next) => {
 
     await photo!.remove()
     .then(() => {
-        response = {
-            result: true,
-        };
+        res.status(200).end('ok');
     })
     .catch(() => {
-        response = {
-            result: false,
-        };
+        res.status(500).end('サーバ処理に失敗');
     });
-
-    res.send(response);
 });
 
+// 動画情報（サムネイル、サブタイトル、タイトルのいずれか）の変更リクエスト
 app.put('/photographs', uploadMemory.single('file'), async (req, res, next) => {
+    // 管理者権限チェック
     await isValidAuth(req).then(() => {
     }).catch((err) => {
         res.status(404).end();
@@ -445,36 +223,27 @@ app.put('/photographs', uploadMemory.single('file'), async (req, res, next) => {
     const thumbnail = req.file;
     const subTitle = req.body.subTitle;
     const title = req.body.title;
-    let response = {};
 
     logger.info(`set photo: ${photoId}`);
-
     const photo: Photographs = await postgresConnection.getRepository(Photographs).findOne({
         where: {
             id: photoId,
         },
     });
 
+    // サムネイルの変更リクエスト
     if (thumbnail) {
         const now = moment(new Date()).format('YYYY-MM-DD HH:mm:ss');
-        // photoId = req.photoId;
-        const fileName = thumbnail.originalname;
-        const buffer = thumbnail.buffer;
-        const mimetype = thumbnail.mimetype;
-        const size = thumbnail.size;
-        console.log(fileName);
-        console.log(buffer);
-        console.log(mimetype);
-        console.log(size);
-        console.log(process.env.POSTGRES_DB);
-        photo!.file_name = fileName;
-        photo!.data = buffer;
-        photo!.mimetype = mimetype;
-        photo!.size = size;
+        photo!.file_name = thumbnail.originalname;
+        photo!.data = thumbnail.buffer;
+        photo!.mimetype = thumbnail.mimetype;
+        photo!.size = thumbnail.size;
         photo!.modified_datetime = now;
     } else {
+        // タイトルの変更リクエスト
         if (subTitle === undefined) {
             photo!.title = title;
+        // サブタイトルの変更リクエスト
         } else {
             photo!.sub_title = subTitle;
         }
@@ -482,98 +251,43 @@ app.put('/photographs', uploadMemory.single('file'), async (req, res, next) => {
 
     await photo!.save()
     .then(() => {
-        response = {
-            result: true,
-        };
+        res.status(200).end('ok');
     })
     .catch(() => {
-        response = {
-            result: false,
-        };
+        res.status(500).end('サーバ処理に失敗');
     });
-
-    res.send(response);
 });
 
+// 動画アップロードリクエスト
 app.put('/video', uploadStorage.single('file'), async (req, res, next) => {
-    let response = {
-        result: false,
-    };
-
-    const path = `./public/hls/${req.file.originalname}`;
-    const folder = `./public/hls/video-${req.body.photoId}`;
-
-    logger.info(`set video: ${req.body.photoId}`);
-
-    await exchangeCodec(path, folder).then(() => {
-        logger.info('success');
-        response = {
-            result: true,
-        };
-    }).catch((err) => {
-        console.log(err);
-        logger.error(err);
-    });
-
+    // 管理者権限チェック
     await isValidAuth(req).then(() => {
     }).catch((err) => {
         res.status(404).end();
         next();
     });
 
-    // const photoId = req.body.photoId;
-    // const videoData = req.file;
+    // アップロードしたmp4データ配置先
+    const path = `./public/hls/${req.file.originalname}`;
+    // mp4を分割したデータ配置先
+    const folder = `./public/hls/video-${req.body.photoId}`;
 
-    // let video: Videos = await postgresConnection.getRepository(Videos).findOne({
-    //     where: {
-    //         photograph_id: photoId,
-    //     },
-    // });
+    logger.info(`set video: ${req.body.photoId}`);
 
-    // const now = moment(new Date()).format('YYYY-MM-DD HH:mm:ss');
-    // const fileName = videoData.originalname;
-    // const buffer = videoData.buffer;
-    // const mimetype = videoData.mimetype;
-    // const size = videoData.size;
-    // console.log(fileName);
-    // console.log(buffer);
-    // console.log(mimetype);
-    // console.log(size);
-    // console.log(process.env.POSTGRES_DB);
-
-    // if (video) {
-    //     video.file_name = fileName;
-    //     video.data = buffer;
-    //     video.mimetype = mimetype;
-    //     video.size = size;
-    //     video.modified_datetime = now;
-    // } else {
-    //     video = new Videos();
-    //     video.photograph_id = photoId;
-    //     video.mimetype = mimetype;
-    //     video.file_name = fileName;
-    //     video.size = size;
-    //     video.data = buffer;
-    //     video.created_datetime = now;
-    //     video.modified_datetime = now;
-    // }
-
-    // await video.save()
-    // .then(() => {
-    //     response = {
-    //         result: true,
-    //     };
-    // })
-    // .catch(() => {
-    //     response = {
-    //         result: false,
-    //     };
-    // });
-
-    res.send(response);
+    // 分割後、指定先に配置
+    await exchangeCodec(path, folder).then(() => {
+        logger.info('success');
+        res.status(200).end('ok');
+    }).catch((err: any) => {
+        console.log(err);
+        logger.error(err);
+        res.status(500).end('サーバ処理に失敗');
+    });
 });
 
+// お問い合わせ履歴取得リクエスト（検索条件により最大100件）
 app.get('/contact', async (req, res, next) => {
+    // 管理者権限チェック
     await isValidAuth(req).then(() => {
     }).catch((err) => {
         res.status(404).end();
@@ -581,16 +295,18 @@ app.get('/contact', async (req, res, next) => {
     });
 
     logger.info('contact');
-
     const query = req.query;
     const searchString = query.search;
     const createdTo = query.createdTo;
     let contacts: any = [];
     let count: number = 0;
 
+    // TODO like構文から全文検索ロジック（ngramパーサー）に変更
+
+    // 検索フィルターがない場合
     if (searchString.length === 0 && createdTo.length === 0) {
         count = await postgresConnection.getRepository(Contacts).count();
-
+        // createdDTの降順リクエスト（デフォルト）
         if (query.type === 'true') {
             contacts = await postgresConnection.getRepository(Contacts).find({
                 order: {
@@ -598,6 +314,7 @@ app.get('/contact', async (req, res, next) => {
                 },
                 take: 100,
             });
+        // createdDTの昇順リクエスト
         } else {
             contacts = await postgresConnection.getRepository(Contacts).find({
                 order: {
@@ -606,6 +323,7 @@ app.get('/contact', async (req, res, next) => {
                 take: 100,
             });
         }
+    // 日付フィルターのみあった場合
     } else if (searchString.length !== 0 && createdTo.length === 0) {
         count = await postgresConnection.getRepository(Contacts).createQueryBuilder()
         .where("account like '%' || :search || '%'", { search: searchString })
@@ -633,6 +351,7 @@ app.get('/contact', async (req, res, next) => {
             .limit(100)
             .getMany();
         }
+     // 文字列検索のみあった場合
     } else if (searchString.length === 0 && createdTo.length !== 0) {
         count = await postgresConnection.getRepository(Contacts).createQueryBuilder()
         .where('created_datetime <= :to', { to: createdTo })
@@ -651,6 +370,7 @@ app.get('/contact', async (req, res, next) => {
             .limit(100)
             .getMany();
         }
+    // 文字列検索と日付フィルターのどちらもあった場合
     } else if (searchString.length !== 0 && createdTo.length !== 0) {
         count = await postgresConnection.getRepository(Contacts).createQueryBuilder()
         .where('created_datetime <= :to', { to: createdTo })
@@ -695,6 +415,7 @@ app.get('/contact', async (req, res, next) => {
         }
     }
 
+    // 日付フォーマット変換
     contacts.forEach((contact: any) => {
         contact.created_datetime = moment(new Date(contact.created_datetime))
                                     .format('YYYY-MM-DD HH:mm:ss');
@@ -709,6 +430,7 @@ app.get('/contact', async (req, res, next) => {
     res.send(response);
 });
 
+// ポート解放
 app.listen(7000, () => console.log('Listen on port 7000!!'));
 
 export default app;

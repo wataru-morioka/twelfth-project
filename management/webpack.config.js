@@ -3,23 +3,23 @@ const nodeExternals = require('webpack-node-externals');
 
 module.exports = {
     mode: 'production',
-    entry: './src/main.ts',     // src下に書いていくので　src/server.tsにしとく
-    target: 'node',               // Module not found: Error: Can't resolve 'fs'とかいっぱい出たら、この行書き忘れ
+    entry: './src/main.ts', 
+    target: 'node',
     externals: [nodeExternals()], 
     module: {
         rules: [
-            // {
-            //     enforce: 'pre',
-            //     loader: 'tslint-loader',
-            //     test: /\.ts$/,
-            //     exclude: [
-            //         /node_modules/
-            //     ],
-            //     options: {
-            //         emitErrors: true,
-            //         typeCheck: true
-            //     }
-            // },
+            {
+                enforce: 'pre',
+                loader: 'tslint-loader',
+                test: /\.ts$/,
+                exclude: [
+                    /node_modules/
+                ],
+                options: {
+                    emitErrors: true,
+                    typeCheck: true
+                }
+            },
             {
                 loader: 'ts-loader',
                 test: /\.ts$/,
