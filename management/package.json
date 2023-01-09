@@ -39,7 +39,7 @@
     "@ffmpeg-installer/ffmpeg": "^1.0.20",
     "@types/fs-extra": "^8.0.0",
     "@types/log4js": "^2.3.5",
-    "firebase-admin": "^8.5.0",
+    "firebase-admin": "^11.4.1",
     "fluent-ffmpeg": "^2.1.2",
     "fs-extra": "^8.1.0",
     "imagemin": "^7.0.0",
